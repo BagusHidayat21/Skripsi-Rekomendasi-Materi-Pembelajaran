@@ -44,12 +44,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             ]
         },
         {
-            section: 'Analytics',
-            items: [
-                { icon: BarChart3, label: 'Progress Saya', href: '/dashboard/progress' },
-            ]
-        },
-        {
             section: 'Account',
             items: [
                 { icon: User, label: 'Profile Saya', href: '/dashboard/profile' },

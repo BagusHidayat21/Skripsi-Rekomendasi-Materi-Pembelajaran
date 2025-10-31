@@ -22,87 +22,112 @@ import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { Alert } from '@/components/ui/Alert';
 
+// Type definitions
+interface Category {
+  category_name: string;
+}
+
+interface DifficultyLevel {
+  level_name: string;
+}
+
+interface Material {
+  title: string;
+  description: string;
+  file_type: string;
+  view_count: number;
+  download_count: number;
+  avg_rating: number | null;
+  categories: Category;
+  difficulty_levels: DifficultyLevel | null;
+}
+
 interface BookmarkItem {
   bookmark_id: number;
   material_id: number;
-  notes: string;
+  notes: string | null;
   created_at: string;
-  materials: {
+  materials: Material;
+}
+
+interface SupabaseBookmarkResponse {
+  bookmark_id: number;
+  material_id: number;
+  notes: string | null;
+  created_at: string;
+  materials: Array<{
     title: string;
     description: string;
     file_type: string;
     view_count: number;
     download_count: number;
-    avg_rating: number;
-    categories: {
-      category_name: string;
-    };
-    difficulty_levels: {
-      level_name: string;
-    };
-  };
+    avg_rating: number | null;
+    categories: Category[];
+    difficulty_levels: DifficultyLevel[];
+  }>;
 }
 
-export default function BookmarksPage() {
+export default function BookmarksPage(): React.JSX.Element {
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
   const [filteredBookmarks, setFilteredBookmarks] = useState<BookmarkItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [editingNote, setEditingNote] = useState<number | null>(null);
-  const [noteText, setNoteText] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [noteText, setNoteText] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
 
   useEffect(() => {
-    fetchBookmarks();
+    void fetchBookmarks();
   }, []);
 
   useEffect(() => {
     filterBookmarks();
   }, [searchQuery, bookmarks]);
 
-  const fetchBookmarks = async () => {
-    try {
-      setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+  const fetchBookmarks = async (): Promise<void> => {
+  try {
+    setLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
 
-      const { data, error } = await supabase
-        .from('bookmarks')
-        .select(`
-          bookmark_id,
-          material_id,
-          notes,
-          created_at,
-          materials (
-            title,
-            description,
-            file_type,
-            view_count,
-            download_count,
-            avg_rating,
-            categories (
-              category_name
-            ),
-            difficulty_levels (
-              level_name
-            )
+    const { data, error: fetchError } = await supabase
+      .from('bookmarks')
+      .select(`
+        bookmark_id,
+        material_id,
+        notes,
+        created_at,
+        materials (
+          title,
+          description,
+          file_type,
+          view_count,
+          download_count,
+          avg_rating,
+          categories (
+            category_name
+          ),
+          difficulty_levels (
+            level_name
           )
-        `)
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false });
+        )
+      `)
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setBookmarks(data || []);
-    } catch (error) {
-      console.error('Error fetching bookmarks:', error);
-      setError('Gagal memuat bookmarks');
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (fetchError) throw fetchError;
+    setBookmarks((data as unknown as BookmarkItem[]) || []);
+  } catch (fetchError) {
+    console.error('Error fetching bookmarks:', fetchError);
+    setError('Gagal memuat bookmarks');
+    setTimeout(() => setError(''), 3000);
+  } finally {
+    setLoading(false);
+  }
+};
 
-  const filterBookmarks = () => {
+  const filterBookmarks = (): void => {
     if (!searchQuery) {
       setFilteredBookmarks(bookmarks);
       return;
@@ -115,34 +140,35 @@ export default function BookmarksPage() {
     setFilteredBookmarks(filtered);
   };
 
-  const handleDeleteBookmark = async (bookmarkId: number) => {
-    if (!confirm('Hapus bookmark ini?')) return;
+  const handleDeleteBookmark = async (bookmarkId: number): Promise<void> => {
+    if (!window.confirm('Hapus bookmark ini?')) return;
 
     try {
-      const { error } = await supabase
+      const { error: deleteError } = await supabase
         .from('bookmarks')
         .delete()
         .eq('bookmark_id', bookmarkId);
 
-      if (error) throw error;
+      if (deleteError) throw deleteError;
 
       setBookmarks(bookmarks.filter(b => b.bookmark_id !== bookmarkId));
       setSuccess('Bookmark berhasil dihapus');
       setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
+    } catch (deleteError) {
+      console.error('Error deleting bookmark:', deleteError);
       setError('Gagal menghapus bookmark');
       setTimeout(() => setError(''), 3000);
     }
   };
 
-  const handleSaveNote = async (bookmarkId: number) => {
+  const handleSaveNote = async (bookmarkId: number): Promise<void> => {
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from('bookmarks')
         .update({ notes: noteText })
         .eq('bookmark_id', bookmarkId);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
       setBookmarks(bookmarks.map(b => 
         b.bookmark_id === bookmarkId ? { ...b, notes: noteText } : b
@@ -151,13 +177,24 @@ export default function BookmarksPage() {
       setNoteText('');
       setSuccess('Catatan berhasil disimpan');
       setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
+    } catch (updateError) {
+      console.error('Error saving note:', updateError);
       setError('Gagal menyimpan catatan');
       setTimeout(() => setError(''), 3000);
     }
   };
 
-  const getFileIcon = (fileType: string) => {
+  const handleEditNote = (bookmarkId: number, currentNote: string | null): void => {
+    setEditingNote(bookmarkId);
+    setNoteText(currentNote || '');
+  };
+
+  const handleCancelEdit = (): void => {
+    setEditingNote(null);
+    setNoteText('');
+  };
+
+  const getFileIcon = (fileType: string): React.JSX.Element => {
     switch (fileType?.toLowerCase()) {
       case 'pdf':
         return <FileText className="w-5 h-5" />;
@@ -168,6 +205,27 @@ export default function BookmarksPage() {
       default:
         return <File className="w-5 h-5" />;
     }
+  };
+
+  const getDifficultyColor = (levelName: string | undefined): string => {
+    switch (levelName) {
+      case 'Beginner':
+        return 'bg-green-100 text-green-700';
+      case 'Intermediate':
+        return 'bg-yellow-100 text-yellow-700';
+      case 'Advanced':
+        return 'bg-red-100 text-red-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const formatDate = (dateString: string): string => {
+    return new Date(dateString).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
   };
 
   return (
@@ -199,6 +257,7 @@ export default function BookmarksPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              aria-label="Cari bookmark"
             />
           </div>
         </div>
@@ -252,15 +311,11 @@ export default function BookmarksPage() {
                             {bookmark.materials.title}
                           </h3>
                         </Link>
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${
-                          bookmark.materials.difficulty_levels?.level_name === 'Beginner' 
-                            ? 'bg-green-100 text-green-700'
-                            : bookmark.materials.difficulty_levels?.level_name === 'Intermediate'
-                            ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}>
-                          {bookmark.materials.difficulty_levels?.level_name}
-                        </span>
+                        {bookmark.materials.difficulty_levels && (
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${getDifficultyColor(bookmark.materials.difficulty_levels.level_name)}`}>
+                            {bookmark.materials.difficulty_levels.level_name}
+                          </span>
+                        )}
                       </div>
 
                       <p className="text-sm text-gray-600 line-clamp-2 mb-3">
@@ -271,11 +326,7 @@ export default function BookmarksPage() {
                       <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 mb-3">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          Disimpan {new Date(bookmark.created_at).toLocaleDateString('id-ID', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric'
-                          })}
+                          Disimpan {formatDate(bookmark.created_at)}
                         </span>
                         <span>•</span>
                         <span>{bookmark.materials.categories.category_name}</span>
@@ -288,10 +339,12 @@ export default function BookmarksPage() {
                           <Download className="w-3 h-3" />
                           {bookmark.materials.download_count}
                         </span>
-                        <span className="flex items-center gap-1">
-                          <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                          {bookmark.materials.avg_rating?.toFixed(1)}
-                        </span>
+                        {bookmark.materials.avg_rating !== null && (
+                          <span className="flex items-center gap-1">
+                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                            {bookmark.materials.avg_rating.toFixed(1)}
+                          </span>
+                        )}
                       </div>
 
                       {/* Notes Section */}
@@ -303,19 +356,19 @@ export default function BookmarksPage() {
                             placeholder="Tambahkan catatan..."
                             rows={3}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none text-sm"
+                            aria-label="Edit catatan"
                           />
                           <div className="flex gap-2 mt-2">
                             <button
-                              onClick={() => handleSaveNote(bookmark.bookmark_id)}
+                              type="button"
+                              onClick={() => void handleSaveNote(bookmark.bookmark_id)}
                               className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                             >
                               Simpan
                             </button>
                             <button
-                              onClick={() => {
-                                setEditingNote(null);
-                                setNoteText('');
-                              }}
+                              type="button"
+                              onClick={handleCancelEdit}
                               className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
                             >
                               Batal
@@ -329,10 +382,8 @@ export default function BookmarksPage() {
                             <div className="flex-1">
                               <p className="text-sm text-gray-700">{bookmark.notes}</p>
                               <button
-                                onClick={() => {
-                                  setEditingNote(bookmark.bookmark_id);
-                                  setNoteText(bookmark.notes);
-                                }}
+                                type="button"
+                                onClick={() => handleEditNote(bookmark.bookmark_id, bookmark.notes)}
                                 className="text-xs text-blue-600 hover:text-blue-700 mt-1"
                               >
                                 Edit catatan
@@ -342,10 +393,8 @@ export default function BookmarksPage() {
                         </div>
                       ) : (
                         <button
-                          onClick={() => {
-                            setEditingNote(bookmark.bookmark_id);
-                            setNoteText('');
-                          }}
+                          type="button"
+                          onClick={() => handleEditNote(bookmark.bookmark_id, null)}
                           className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 mt-2"
                         >
                           <StickyNote className="w-4 h-4" />
@@ -366,7 +415,8 @@ export default function BookmarksPage() {
                     <ExternalLink className="w-4 h-4" />
                   </Link>
                   <button
-                    onClick={() => handleDeleteBookmark(bookmark.bookmark_id)}
+                    type="button"
+                    onClick={() => void handleDeleteBookmark(bookmark.bookmark_id)}
                     className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
                   >
                     <Trash2 className="w-4 h-4" />

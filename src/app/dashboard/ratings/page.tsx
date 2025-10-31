@@ -9,58 +9,70 @@ import {
   Trash2,
   Calendar,
   BookOpen,
-  TrendingUp,
   Award
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { Alert } from '@/components/ui/Alert';
 
+// Definisi Types yang lebih ketat
+interface Category {
+  category_name: string;
+}
+
+interface Material {
+  title: string;
+  description: string;
+  categories: Category;
+}
+
 interface RatingItem {
   rating_id: number;
   material_id: number;
   rating_value: number;
-  review: string;
+  review: string | null;
   created_at: string;
   updated_at: string;
-  materials: {
-    title: string;
-    description: string;
-    categories: {
-      category_name: string;
-    };
-  };
+  materials: Material;
 }
 
-export default function RatingsPage() {
+type RatingValue = 1 | 2 | 3 | 4 | 5;
+
+interface Stats {
+  totalRatings: number;
+  avgRating: number;
+  distribution: Record<RatingValue, number>;
+}
+
+export default function RatingsPage(): React.JSX.Element {
   const [ratings, setRatings] = useState<RatingItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [editingRating, setEditingRating] = useState<number | null>(null);
-  const [editRatingValue, setEditRatingValue] = useState(0);
-  const [editReview, setEditReview] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [stats, setStats] = useState({
+  const [editRatingValue, setEditRatingValue] = useState<number>(0);
+  const [editReview, setEditReview] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
+  const [stats, setStats] = useState<Stats>({
     totalRatings: 0,
     avgRating: 0,
     distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
   });
 
   useEffect(() => {
-    fetchRatings();
+    void fetchRatings();
   }, []);
 
   useEffect(() => {
     calculateStats();
   }, [ratings]);
 
-  const fetchRatings = async () => {
+  const fetchRatings = async (): Promise<void> => {
     try {
       setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('ratings')
         .select(`
           rating_id,
@@ -69,10 +81,10 @@ export default function RatingsPage() {
           review,
           created_at,
           updated_at,
-          materials (
+          materials!inner (
             title,
             description,
-            categories (
+            categories!inner (
               category_name
             )
           )
@@ -80,24 +92,28 @@ export default function RatingsPage() {
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setRatings(data || []);
-    } catch (error) {
-      console.error('Error fetching ratings:', error);
+      if (fetchError) throw fetchError;
+      setRatings((data as unknown as RatingItem[]) || []);
+    } catch (fetchError) {
+      console.error('Error fetching ratings:', fetchError);
+      setError('Gagal memuat data rating');
+      setTimeout(() => setError(''), 3000);
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateStats = () => {
+  const calculateStats = (): void => {
     const total = ratings.length;
     const avg = total > 0 
       ? ratings.reduce((sum, r) => sum + r.rating_value, 0) / total 
       : 0;
     
-    const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    const dist: Record<RatingValue, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     ratings.forEach(r => {
-      dist[r.rating_value as keyof typeof dist]++;
+      if (r.rating_value >= 1 && r.rating_value <= 5) {
+        dist[r.rating_value as RatingValue]++;
+      }
     });
 
     setStats({
@@ -107,19 +123,19 @@ export default function RatingsPage() {
     });
   };
 
-  const handleEditStart = (rating: RatingItem) => {
+  const handleEditStart = (rating: RatingItem): void => {
     setEditingRating(rating.rating_id);
     setEditRatingValue(rating.rating_value);
     setEditReview(rating.review || '');
   };
 
-  const handleEditCancel = () => {
+  const handleEditCancel = (): void => {
     setEditingRating(null);
     setEditRatingValue(0);
     setEditReview('');
   };
 
-  const handleEditSave = async (ratingId: number) => {
+  const handleEditSave = async (ratingId: number): Promise<void> => {
     if (editRatingValue === 0) {
       setError('Pilih rating terlebih dahulu');
       setTimeout(() => setError(''), 3000);
@@ -127,7 +143,7 @@ export default function RatingsPage() {
     }
 
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from('ratings')
         .update({
           rating_value: editRatingValue,
@@ -136,41 +152,63 @@ export default function RatingsPage() {
         })
         .eq('rating_id', ratingId);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
       setRatings(ratings.map(r => 
         r.rating_id === ratingId 
-          ? { ...r, rating_value: editRatingValue, review: editReview, updated_at: new Date().toISOString() }
+          ? { 
+              ...r, 
+              rating_value: editRatingValue, 
+              review: editReview, 
+              updated_at: new Date().toISOString() 
+            }
           : r
       ));
 
       setEditingRating(null);
       setSuccess('Rating berhasil diupdate');
       setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
+    } catch (updateError) {
+      console.error('Error updating rating:', updateError);
       setError('Gagal update rating');
       setTimeout(() => setError(''), 3000);
     }
   };
 
-  const handleDelete = async (ratingId: number) => {
-    if (!confirm('Hapus rating ini?')) return;
+  const handleDelete = async (ratingId: number): Promise<void> => {
+    if (!window.confirm('Hapus rating ini?')) return;
 
     try {
-      const { error } = await supabase
+      const { error: deleteError } = await supabase
         .from('ratings')
         .delete()
         .eq('rating_id', ratingId);
 
-      if (error) throw error;
+      if (deleteError) throw deleteError;
 
       setRatings(ratings.filter(r => r.rating_id !== ratingId));
       setSuccess('Rating berhasil dihapus');
       setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
+    } catch (deleteError) {
+      console.error('Error deleting rating:', deleteError);
       setError('Gagal menghapus rating');
       setTimeout(() => setError(''), 3000);
     }
+  };
+
+  const formatDate = (dateString: string): string => {
+    return new Date(dateString).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
+
+  const formatShortDate = (dateString: string): string => {
+    return new Date(dateString).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short'
+    });
   };
 
   return (
@@ -224,7 +262,7 @@ export default function RatingsPage() {
           <div className="bg-white rounded-xl p-6 border border-gray-200">
             <p className="text-sm text-gray-600 mb-3">Distribusi Rating</p>
             <div className="space-y-2">
-              {[5, 4, 3, 2, 1].map((star) => (
+              {([5, 4, 3, 2, 1] as const).map((star) => (
                 <div key={star} className="flex items-center gap-2">
                   <span className="text-xs text-gray-600 w-4">{star}</span>
                   <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
@@ -233,13 +271,13 @@ export default function RatingsPage() {
                       className="bg-yellow-400 h-2 rounded-full transition-all"
                       style={{
                         width: `${stats.totalRatings > 0 
-                          ? (stats.distribution[star as keyof typeof stats.distribution] / stats.totalRatings) * 100 
+                          ? (stats.distribution[star] / stats.totalRatings) * 100 
                           : 0}%`
                       }}
                     />
                   </div>
                   <span className="text-xs text-gray-600 w-8 text-right">
-                    {stats.distribution[star as keyof typeof stats.distribution]}
+                    {stats.distribution[star]}
                   </span>
                 </div>
               ))}
@@ -281,8 +319,10 @@ export default function RatingsPage() {
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button
                             key={star}
+                            type="button"
                             onClick={() => setEditRatingValue(star)}
                             className="transition-transform hover:scale-110"
+                            aria-label={`Rating ${star}`}
                           >
                             <Star
                               className={`w-8 h-8 ${
@@ -298,10 +338,11 @@ export default function RatingsPage() {
 
                     {/* Review Text */}
                     <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label htmlFor="edit-review" className="block text-sm font-medium text-gray-700 mb-2">
                         Review
                       </label>
                       <textarea
+                        id="edit-review"
                         value={editReview}
                         onChange={(e) => setEditReview(e.target.value)}
                         placeholder="Tulis review Anda..."
@@ -313,12 +354,14 @@ export default function RatingsPage() {
                     {/* Actions */}
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleEditSave(rating.rating_id)}
+                        type="button"
+                        onClick={() => void handleEditSave(rating.rating_id)}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                       >
                         Simpan
                       </button>
                       <button
+                        type="button"
                         onClick={handleEditCancel}
                         className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
                       >
@@ -340,14 +383,18 @@ export default function RatingsPage() {
                       </Link>
                       <div className="flex gap-2 ml-4">
                         <button
+                          type="button"
                           onClick={() => handleEditStart(rating)}
                           className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          aria-label="Edit rating"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDelete(rating.rating_id)}
+                          type="button"
+                          onClick={() => void handleDelete(rating.rating_id)}
                           className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          aria-label="Delete rating"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -389,20 +436,13 @@ export default function RatingsPage() {
                       <span>•</span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(rating.created_at).toLocaleDateString('id-ID', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric'
-                        })}
+                        {formatDate(rating.created_at)}
                       </span>
                       {rating.created_at !== rating.updated_at && (
                         <>
                           <span>•</span>
                           <span className="text-blue-600">
-                            Diupdate {new Date(rating.updated_at).toLocaleDateString('id-ID', {
-                              day: 'numeric',
-                              month: 'short'
-                            })}
+                            Diupdate {formatShortDate(rating.updated_at)}
                           </span>
                         </>
                       )}
