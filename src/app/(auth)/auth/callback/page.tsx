@@ -14,6 +14,7 @@ export default function AuthCallback() {
 
   const handleCallback = async () => {
     try {
+      // ⭐ Get session from URL hash (for OAuth)
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
@@ -23,23 +24,52 @@ export default function AuthCallback() {
       }
 
       if (!session) {
-        router.push('/auth');
+        // ⭐ Try to exchange code for session
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+
+        if (accessToken && refreshToken) {
+          const { data, error: setError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (setError || !data.session) {
+            console.error('Session set error:', setError);
+            router.push('/auth?error=session_failed');
+            return;
+          }
+
+          // Continue with the new session
+          await processSession(data.session.user.id);
+        } else {
+          router.push('/auth');
+        }
         return;
       }
 
-      // Cek apakah profile sudah lengkap
-      const isComplete = await profileService.checkProfileCompletion(session.user.id);
-
-      if (isComplete) {
-        // Jika profile sudah lengkap, ke dashboard
-        router.push('/dashboard');
-      } else {
-        // Jika profile belum lengkap, ke complete-profile
-        router.push('/complete-profile');
-      }
+      await processSession(session.user.id);
     } catch (err) {
       console.error('Callback error:', err);
       router.push('/auth?error=unexpected');
+    }
+  };
+
+  const processSession = async (userId: string) => {
+    try {
+      // Cek apakah profile sudah lengkap
+      const isComplete = await profileService.checkProfileCompletion(userId);
+
+      // ⭐ Use replace instead of push to prevent back button issues
+      if (isComplete) {
+        router.replace('/dashboard');
+      } else {
+        router.replace('/complete-profile');
+      }
+    } catch (err) {
+      console.error('Process session error:', err);
+      router.replace('/dashboard'); // Fallback
     }
   };
 
