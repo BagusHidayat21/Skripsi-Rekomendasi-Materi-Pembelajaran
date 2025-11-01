@@ -1,55 +1,45 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { updateSession } from '@/lib/supabase/middleware'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
+  const { response, user } = await updateSession(req)
 
-  // ⭐ Refresh session to ensure cookies are set properly
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  // 🔥 Force cookie refresh
-  await supabase.auth.refreshSession();
-
-  console.log('Middleware path:', req.nextUrl.pathname);
-  console.log('Middleware session exists:', !!session);
+  console.log('Middleware path:', req.nextUrl.pathname)
+  console.log('Middleware user exists:', !!user)
 
   // Redirect root to appropriate page
   if (req.nextUrl.pathname === '/') {
-    if (session) {
-      return NextResponse.redirect(new URL('/dashboard', req.url));
+    if (user) {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
     } else {
-      return NextResponse.redirect(new URL('/auth', req.url));
+      return NextResponse.redirect(new URL('/auth', req.url))
     }
   }
 
-  // Protect dashboard routes - redirect to auth if not logged in
+  // Protect dashboard routes
   if (req.nextUrl.pathname.startsWith('/dashboard')) {
-    if (!session) {
-      const redirectUrl = new URL('/auth', req.url);
-      return NextResponse.redirect(redirectUrl);
+    if (!user) {
+      return NextResponse.redirect(new URL('/auth', req.url))
     }
   }
 
-  // ⭐ Redirect auth page if already logged in (with exception for callback)
+  // Redirect auth page if already logged in (except callback)
   if (req.nextUrl.pathname.startsWith('/auth') && 
       !req.nextUrl.pathname.startsWith('/auth/callback')) {
-    if (session) {
-      return NextResponse.redirect(new URL('/dashboard', req.url));
+    if (user) {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
     }
   }
 
-  // Protect complete-profile - only accessible after auth
+  // Protect complete-profile
   if (req.nextUrl.pathname === '/complete-profile') {
-    if (!session) {
-      return NextResponse.redirect(new URL('/auth', req.url));
+    if (!user) {
+      return NextResponse.redirect(new URL('/auth', req.url))
     }
   }
 
-  return res;
+  return response
 }
 
 export const config = {
@@ -59,4 +49,4 @@ export const config = {
     '/dashboard/:path*',
     '/complete-profile',
   ],
-};
+}

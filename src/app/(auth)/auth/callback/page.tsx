@@ -2,11 +2,12 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { profileService } from '@/services/profile.service';
 
 export default function AuthCallback() {
   const router = useRouter();
+  const supabase = createClient();
 
   useEffect(() => {
     handleCallback();
@@ -14,62 +15,32 @@ export default function AuthCallback() {
 
   const handleCallback = async () => {
     try {
-      // ⭐ Get session from URL hash (for OAuth)
+      // ⭐ Exchange code for session
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
         console.error('Auth callback error:', error);
-        router.push('/auth?error=auth_failed');
+        router.replace('/auth?error=auth_failed');
         return;
       }
 
       if (!session) {
-        // ⭐ Try to exchange code for session
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
-
-        if (accessToken && refreshToken) {
-          const { data, error: setError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-
-          if (setError || !data.session) {
-            console.error('Session set error:', setError);
-            router.push('/auth?error=session_failed');
-            return;
-          }
-
-          // Continue with the new session
-          await processSession(data.session.user.id);
-        } else {
-          router.push('/auth');
-        }
+        router.replace('/auth');
         return;
       }
 
-      await processSession(session.user.id);
-    } catch (err) {
-      console.error('Callback error:', err);
-      router.push('/auth?error=unexpected');
-    }
-  };
-
-  const processSession = async (userId: string) => {
-    try {
       // Cek apakah profile sudah lengkap
-      const isComplete = await profileService.checkProfileCompletion(userId);
+      const isComplete = await profileService.checkProfileCompletion(session.user.id);
 
-      // ⭐ Use replace instead of push to prevent back button issues
+      // ⭐ Force a hard navigation to refresh cookies
       if (isComplete) {
-        router.replace('/dashboard');
+        window.location.href = '/dashboard';
       } else {
-        router.replace('/complete-profile');
+        window.location.href = '/complete-profile';
       }
     } catch (err) {
-      console.error('Process session error:', err);
-      router.replace('/dashboard'); // Fallback
+      console.error('Callback error:', err);
+      router.replace('/auth?error=unexpected');
     }
   };
 

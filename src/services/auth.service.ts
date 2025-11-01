@@ -1,5 +1,7 @@
-import { supabase } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
 import { RegisterFormData, LoginFormData, AuthResponse } from '@/types/auth';
+
+const supabase = createClient();
 
 export const authService = {
   // Login dengan Email/Password
@@ -126,10 +128,14 @@ export const authService = {
   // Login dengan Google
   async signInWithGoogle() {
     try {
+      const redirectUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/auth/callback`
+        : `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/auth/callback`
+          redirectTo: redirectUrl,
         }
       });
 
