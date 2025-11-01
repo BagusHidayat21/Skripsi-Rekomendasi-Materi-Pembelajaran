@@ -45,7 +45,7 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     '/',
-    '/auth/:path*',
+    '/auth((?!/logout|/callback).*)',
     '/dashboard/:path*',
     '/complete-profile',
   ],
